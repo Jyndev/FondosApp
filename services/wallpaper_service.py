@@ -38,7 +38,7 @@ class WallpaperService:
             logger.error(f"Error reading gsettings: {e}")
             return "dark" # Default fallback
 
-    def _apply_theme(self, image_path):
+    def _apply_theme(self, image_path, scheme_type="scheme-tonal-spot"):
         if not shutil.which('matugen'):
             logger.error("matugen is not installed.")
             return False, "Matugen no está instalado en el sistema.", {}
@@ -48,7 +48,7 @@ class WallpaperService:
         
         try:
             # matugen image "path" -m "dark/light" -t scheme-tonal-spot
-            matugen_cmd = ["matugen", "image", str(image_path), "-m", mode, "-t", "scheme-tonal-spot"]
+            matugen_cmd = ["matugen", "image", str(image_path), "-m", mode, "-t", scheme_type]
             
             # Use specific config if it exists
             if self.matugen_config.exists():
@@ -64,7 +64,7 @@ class WallpaperService:
 
             # Extract colors array from matugen dynamically
             import json
-            json_cmd = ["matugen", "image", str(image_path), "-m", mode, "-t", "scheme-tonal-spot", "-j", "hex", "--source-color-index", "0", "--dry-run"]
+            json_cmd = ["matugen", "image", str(image_path), "-m", mode, "-t", scheme_type, "-j", "hex", "--source-color-index", "0", "--dry-run"]
             json_result = subprocess.run(json_cmd, capture_output=True, text=True, cwd=os.path.expanduser("~"))
             if json_result.returncode == 0:
                 try:
@@ -119,7 +119,7 @@ class WallpaperService:
         except Exception:
             pass
 
-    def apply_wallpaper(self, image_path):
+    def apply_wallpaper(self, image_path, scheme_type="scheme-tonal-spot"):
         try:
             # 0. Ensure daemon is running
             self._ensure_daemon_running()
@@ -133,7 +133,7 @@ class WallpaperService:
                 return False, f"Error al aplicar el fondo:\n{result.stderr[-100:]}", {}
                 
             # 2. Apply matugen theme
-            theme_success, theme_err, colors = self._apply_theme(image_path)
+            theme_success, theme_err, colors = self._apply_theme(image_path, scheme_type)
             
             # 3. Reload UI elements
             self._reload_environment()
@@ -163,9 +163,9 @@ class WallpaperService:
             logger.exception("Failed to execute only_wallpaper.")
             return False, str(e), {}
 
-    def apply_only_colors(self, image_path):
+    def apply_only_colors(self, image_path, scheme_type="scheme-tonal-spot"):
         try:
-            theme_success, theme_err, colors = self._apply_theme(image_path)
+            theme_success, theme_err, colors = self._apply_theme(image_path, scheme_type)
             self._reload_environment()
             if not theme_success:
                 return False, f"Falló la generación de color:\n{theme_err}", {}
@@ -174,7 +174,7 @@ class WallpaperService:
             logger.exception("Failed to execute only_colors.")
             return False, str(e), {}
             
-    def apply_sddm_wallpaper(self, image_path):
+    def apply_sddm_wallpaper(self, image_path, scheme_type="scheme-tonal-spot"):
         sddm_dir = Path("/usr/local/etc/sddm")
         if not sddm_dir.exists():
             return False, f"El directorio SDDM no existe en {sddm_dir}."
@@ -202,7 +202,7 @@ class WallpaperService:
             mode = self._get_matugen_mode()
             matugen_config_sddm = Path(os.path.expanduser("~/.config/matugen/config-sddm.toml"))
             
-            matugen_cmd = ["matugen", "image", str(image_path), "-m", mode, "-t", "scheme-tonal-spot"]
+            matugen_cmd = ["matugen", "image", str(image_path), "-m", mode, "-t", scheme_type]
             if matugen_config_sddm.exists():
                 matugen_cmd.extend(["-c", str(matugen_config_sddm)])
                 
@@ -222,4 +222,9 @@ class WallpaperService:
         except Exception as e:
             logger.exception("Failed to execute SDDM setup.")
             return False, f"Error configurando SDDM:\n{str(e)}", {}
+
+    def get_colors(self, image_path, scheme_type="scheme-tonal-spot"):
+        """Returns the matugen color dictionary for a given image without applying it."""
+        success, err, colors = self._apply_theme(image_path, scheme_type)
+        return colors if success else {}
 

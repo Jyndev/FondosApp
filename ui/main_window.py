@@ -1,7 +1,8 @@
 import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
-    QScrollArea, QGridLayout, QFileDialog, QSizePolicy, QFrame
+    QScrollArea, QGridLayout, QFileDialog, QSizePolicy, QFrame,
+    QComboBox, QStyledItemDelegate
 )
 from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt
@@ -84,17 +85,28 @@ class MainWindow(QWidget):
         actions_layout = QVBoxLayout()
         actions_layout.setSpacing(10)
         
+        self.combo_scheme = QComboBox()
+        self.combo_scheme.setItemDelegate(QStyledItemDelegate()) # Crucial to allow QListView styling in Qt6
+        self.combo_scheme.addItems([
+            "scheme-tonal-spot", "scheme-content", "scheme-expressive", 
+            "scheme-fidelity", "scheme-fruit-salad", "scheme-monochrome", 
+            "scheme-neutral", "scheme-rainbow", "scheme-vibrant"
+        ])
+        self.combo_scheme.setCursor(Qt.PointingHandCursor)
+        self.combo_scheme.currentTextChanged.connect(self.on_scheme_changed)
+        actions_layout.addWidget(self.combo_scheme)
+        
         button_style = """
             QPushButton {
                 background-color: #2c2c2c; 
                 color: #ffffff; 
-                border: 1px solid #444444; 
+                border: none; 
                 padding: 10px; 
                 border-radius: 8px; 
                 font-weight: bold;
             }
-            QPushButton:hover { background-color: #383838; border: 1px solid #666666; }
-            QPushButton:disabled { background-color: #1a1a1a; color: #555555; border: 1px solid #333333; }
+            QPushButton:hover { background-color: #383838; }
+            QPushButton:disabled { background-color: #1a1a1a; color: #555555; }
         """
         
         self.btn_apply_all = QPushButton("APLICAR TODO")
@@ -265,6 +277,119 @@ class MainWindow(QWidget):
             Qt.KeepAspectRatio, 
             Qt.SmoothTransformation
         ))
+        
+        # Get colors for live preview
+        colors = self.wallpaper_service.get_colors(image_path, self.combo_scheme.currentText())
+        self._update_preview_colors(colors)
+
+    def on_scheme_changed(self, text):
+        if self.selected_image_path:
+            colors = self.wallpaper_service.get_colors(self.selected_image_path, text)
+            self._update_preview_colors(colors)
+
+    def _update_preview_colors(self, colors_dict):
+        if not colors_dict: return
+        
+        mode = colors_dict.get("mode", "dark")
+        colors = colors_dict.get("colors", {})
+        
+        def get_color(name, default="#ffffff"):
+            color_node = colors.get(name, {})
+            mode_node = color_node.get(mode, color_node.get("default", {}))
+            return mode_node.get("color", default)
+            
+        primary = get_color("primary")
+        surface = get_color("surface")
+        surface_container = get_color("surface_container")
+        surface_variant = get_color("surface_variant")
+        on_surface = get_color("on_surface")
+        on_surface_variant = get_color("on_surface_variant")
+        
+        # Update preview frame
+        self.preview_widget.setStyleSheet(f"QFrame {{ background-color: {surface_variant}; border-radius: 12px; }}")
+        self.lbl_selected_name.setStyleSheet(f"color: {on_surface_variant};")
+        self.lbl_preview_title.setStyleSheet(f"color: {primary}; font-weight: bold; font-size: 18px;")
+        
+        # Action Buttons Layout styles
+        # Secondary buttons: dark bg, no border, color accent on hover
+        button_style = f"""
+            QPushButton {{
+                background-color: #2c2c2c; 
+                color: #ffffff; 
+                border: none; 
+                padding: 10px; 
+                border-radius: 8px; 
+                font-weight: bold;
+            }}
+            QPushButton:hover {{ background-color: {primary}; color: {surface}; }}
+            QPushButton:disabled {{ background-color: #1a1a1a; color: #555555; }}
+        """
+        
+        # Combo scheme: Adding a colored border and explicit styling for the dropdown
+        combo_style = f"""
+            QComboBox {{
+                background-color: #2c2c2c;
+                color: #ffffff;
+                border: 2px solid {primary};
+                padding: 8px 12px;
+                border-radius: 8px;
+                font-weight: bold;
+            }}
+            QComboBox::drop-down {{
+                border: none;
+            }}
+            QComboBox::down-arrow {{
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 5px solid {primary};
+                margin-right: 10px;
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: #2c2c2c;
+                background: #2c2c2c;
+                color: #ffffff;
+                selection-background-color: {primary};
+                selection-color: {surface};
+                border: 2px solid {primary};
+                border-radius: 0px;
+                padding: 0px;
+                margin: 0px;
+                outline: none;
+            }}
+            QComboBox QAbstractItemView::item {{
+                background-color: #2c2c2c;
+                color: #ffffff;
+                min-height: 30px;
+                padding: 5px 10px;
+                margin: 0px;
+                border: none;
+            }}
+            QComboBox QAbstractItemView::item:selected {{
+                background-color: {primary};
+                color: {surface};
+            }}
+            QComboBox QAbstractItemView::item:hover {{
+                background-color: {primary};
+                color: {surface};
+            }}
+        """
+        self.combo_scheme.setStyleSheet(combo_style)
+        
+        # Primary button style (APLICAR TODO)
+        apply_all_style = f"""
+            QPushButton {{
+                background-color: {primary}; color: {surface}; 
+                border: none; padding: 12px; border-radius: 8px; font-weight: bold;
+            }}
+            QPushButton:hover {{ background-color: {primary}dd; }}
+            QPushButton:disabled {{ background-color: {surface_container}; color: {on_surface_variant}; }}
+        """
+        
+        self.btn_apply_all.setStyleSheet(apply_all_style)
+        self.btn_only_wall.setStyleSheet(button_style)
+        self.btn_only_colors.setStyleSheet(button_style)
+        self.btn_sddm.setStyleSheet(button_style)
 
     def load_initial_folder(self):
         last_folder = self.config.get_last_folder()
@@ -279,7 +404,7 @@ class MainWindow(QWidget):
 
     def apply_wallpaper(self):
         if not self.selected_image_path: return
-        success, msg, colors = self.wallpaper_service.apply_wallpaper(self.selected_image_path)
+        success, msg, colors = self.wallpaper_service.apply_wallpaper(self.selected_image_path, self.combo_scheme.currentText())
         if success and colors:
             ThemeManager.get_instance().update_colors(colors)
             self._reload_ui_styles()
@@ -292,7 +417,7 @@ class MainWindow(QWidget):
 
     def apply_only_colors(self):
         if not self.selected_image_path: return
-        success, msg, colors = self.wallpaper_service.apply_only_colors(self.selected_image_path)
+        success, msg, colors = self.wallpaper_service.apply_only_colors(self.selected_image_path, self.combo_scheme.currentText())
         if success and colors:
             ThemeManager.get_instance().update_colors(colors)
             self._reload_ui_styles()
@@ -300,5 +425,5 @@ class MainWindow(QWidget):
         
     def apply_sddm_wallpaper(self):
         if not self.selected_image_path: return
-        success, msg, colors = self.wallpaper_service.apply_sddm_wallpaper(self.selected_image_path)
+        success, msg, colors = self.wallpaper_service.apply_sddm_wallpaper(self.selected_image_path, self.combo_scheme.currentText())
         self._handle_action_result(success, msg)
