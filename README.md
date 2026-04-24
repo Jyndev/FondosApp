@@ -6,12 +6,7 @@
 
 ## 📸 Previsualización
 
-![Banner Principal](https://placehold.co/1200x600/1e1e2e/cba6f7?text=Inserta+aqui+un+screenshot+de+la+app)
-
-### Interfaz y Funciones
-| Explorador de Fondos | Vista Previa de Colores |
-| :---: | :---: |
-| ![Explorador](https://placehold.co/400x250/1e1e2e/cba6f7?text=Grid+de+Imagenes) | ![Colores](https://placehold.co/400x250/1e1e2e/cba6f7?text=Previsualizacion+de+Colores) |
+![Banner Principal](images/app.png)
 
 ---
 
@@ -37,8 +32,8 @@ sudo pacman -S python python-pip awww matugen-bin gsettings-desktop-schemas
 Se recomienda usar un entorno virtual para evitar conflictos:
 ```bash
 # Clonar el proyecto
-git clone https://github.com/tu-usuario/fondos_app.git
-cd fondos_app
+git clone https://github.com/Jyndev/FondosApp.git
+cd FondosApp
 
 # Crear y activar el entorno
 python -m venv env
