@@ -29,7 +29,7 @@ MANIFEST
 # PyInstaller
 #  Often people debug their spec files as well, so it may be useful to not ignore them
 *.manifest
-*.spec
+
 
 # Installer logs
 pip-log.txt

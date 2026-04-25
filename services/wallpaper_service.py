@@ -11,14 +11,31 @@ class WallpaperService:
     def __init__(self):
         self.matugen_config = Path(os.path.expanduser("~/.config/matugen/config.toml"))
 
+    def _get_clean_env(self):
+        """Devuelve el entorno original sin las variables de PyInstaller."""
+        env = os.environ.copy()
+        
+        # Eliminar cualquier variable inyectada por PyInstaller para evitar 
+        # que AGS o programas hijos asuman que están dentro del bundle.
+        keys_to_remove = [k for k in env if k.startswith('_PYI_')]
+        for k in keys_to_remove:
+            del env[k]
+
+        if 'LD_LIBRARY_PATH_ORIG' in env:
+            env['LD_LIBRARY_PATH'] = env['LD_LIBRARY_PATH_ORIG']
+            del env['LD_LIBRARY_PATH_ORIG']
+        elif 'LD_LIBRARY_PATH' in env:
+            del env['LD_LIBRARY_PATH']
+        return env
+
     def _ensure_daemon_running(self):
         """Ensures that awww-daemon is running before attempting to use awww client."""
         try:
-            subprocess.run(["pgrep", "awww-daemon"], check=True, capture_output=True)
+            subprocess.run(["pgrep", "awww-daemon"], check=True, capture_output=True, env=self._get_clean_env())
         except subprocess.CalledProcessError:
             logger.info("awww-daemon not running, starting it...")
             try:
-                subprocess.Popen(["awww-daemon"], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.Popen(["awww-daemon"], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=self._get_clean_env())
                 import time
                 time.sleep(1) # Give it a moment to initialize the socket
             except Exception as e:
@@ -28,7 +45,7 @@ class WallpaperService:
         try:
             result = subprocess.run(
                 ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
-                capture_output=True, text=True
+                capture_output=True, text=True, env=self._get_clean_env()
             )
             mode_str = result.stdout.strip()
             if "prefer-dark" in mode_str:
@@ -57,7 +74,7 @@ class WallpaperService:
             # Add flag to non-interactively select the primary color and run as normal subprocess
             matugen_cmd.extend(["--source-color-index", "0"])
             
-            result = subprocess.run(matugen_cmd, capture_output=True, text=True, cwd=os.path.expanduser("~"))
+            result = subprocess.run(matugen_cmd, capture_output=True, text=True, cwd=os.path.expanduser("~"), env=self._get_clean_env())
             
             if result.returncode != 0:
                  return False, f"Error matugen:\n{result.stderr[-100:]}", {}
@@ -65,7 +82,7 @@ class WallpaperService:
             # Extract colors array from matugen dynamically
             import json
             json_cmd = ["matugen", "image", str(image_path), "-m", mode, "-t", scheme_type, "-j", "hex", "--source-color-index", "0", "--dry-run"]
-            json_result = subprocess.run(json_cmd, capture_output=True, text=True, cwd=os.path.expanduser("~"))
+            json_result = subprocess.run(json_cmd, capture_output=True, text=True, cwd=os.path.expanduser("~"), env=self._get_clean_env())
             if json_result.returncode == 0:
                 try:
                     extracted_colors = json.loads(json_result.stdout)
@@ -84,12 +101,17 @@ class WallpaperService:
             logger.info("Reiniciando AGS...")
             # Intentar cerrar AGS elegantemente
             try:
-                subprocess.run(["ags", "quit"], capture_output=True, timeout=5)
+                subprocess.run(["ags", "quit"], capture_output=True, timeout=5, env=self._get_clean_env())
+                # Esperar hasta 3 segundos para que los plugins (ej. Spotify MPRIS) cierren limpiamente
+                for _ in range(15):
+                    if subprocess.run(["pgrep", "-x", "ags"], capture_output=True).returncode != 0:
+                        break  # ags se cerró correctamente
+                    time.sleep(0.2)
             except subprocess.TimeoutExpired:
                 logger.warning("ags quit agotó el tiempo de espera, forzando cierre...")
             
             # Matar procesos restantes
-            subprocess.run(["pkill", "-x", "ags"], capture_output=True)
+            subprocess.run(["pkill", "-x", "ags"], capture_output=True, env=self._get_clean_env())
             
             # Pequeña espera para asegurar que el proceso anterior terminó y liberó el socket
             time.sleep(1.0)
@@ -100,22 +122,22 @@ class WallpaperService:
             
             if os.path.exists(ags_app):
                 logger.info(f"Iniciando AGS con app.ts: {ags_app}")
-                subprocess.Popen(["ags", "run", ags_app], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+                subprocess.Popen(["ags", "run", ags_app], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, env=self._get_clean_env())
             elif os.path.exists(default_config):
                 logger.info(f"Iniciando AGS con config.js: {default_config}")
-                subprocess.Popen(["ags", "-c", default_config], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+                subprocess.Popen(["ags", "-c", default_config], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, env=self._get_clean_env())
             elif os.path.exists(ags_script):
                 logger.info(f"Iniciando AGS con script: {ags_script}")
-                subprocess.Popen([ags_script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+                subprocess.Popen([ags_script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, env=self._get_clean_env())
             else:
                 logger.info("Iniciando AGS por defecto")
-                subprocess.Popen(["ags"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+                subprocess.Popen(["ags"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, env=self._get_clean_env())
         except Exception as e:
             logger.error(f"Error al reiniciar AGS: {e}")
             
         # Matar proceso de Rofi en caso de que esté abierto con los colores viejos
         try:
-            subprocess.run(["pkill", "rofi"])
+            subprocess.run(["pkill", "rofi"], env=self._get_clean_env())
         except Exception:
             pass
 
@@ -127,7 +149,7 @@ class WallpaperService:
             # 1. Apply wallpaper with awww
             awww_cmd = ["awww", "img", str(image_path), "--transition-type", "outer", "--transition-pos", "0.854,0.977", "--transition-step", "90"]
             logger.info(f"Applying wallpaper: {' '.join(awww_cmd)}")
-            result = subprocess.run(awww_cmd, capture_output=True, text=True)
+            result = subprocess.run(awww_cmd, capture_output=True, text=True, env=self._get_clean_env())
             
             if result.returncode != 0:
                 return False, f"Error al aplicar el fondo:\n{result.stderr[-100:]}", {}
@@ -154,7 +176,7 @@ class WallpaperService:
 
             awww_cmd = ["awww", "img", str(image_path), "--transition-type", "outer", "--transition-pos", "0.854,0.977", "--transition-step", "90"]
             logger.info(f"Applying only wallpaper: {' '.join(awww_cmd)}")
-            result = subprocess.run(awww_cmd, capture_output=True, text=True)
+            result = subprocess.run(awww_cmd, capture_output=True, text=True, env=self._get_clean_env())
             
             if result.returncode != 0:
                 return False, f"Error al aplicar el fondo:\n{result.stderr[-100:]}", {}
@@ -209,7 +231,7 @@ class WallpaperService:
             matugen_cmd.extend(["--source-color-index", "0"])
             
             # Run matugen but do not check for exit codes (matches bash script behavior)
-            subprocess.run(matugen_cmd, capture_output=True, text=True, cwd=os.path.expanduser("~"))
+            subprocess.run(matugen_cmd, capture_output=True, text=True, cwd=os.path.expanduser("~"), env=self._get_clean_env())
             
             # Symlink colors
             colors_qml = sddm_dir / "Colors.qml"
